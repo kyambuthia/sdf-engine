@@ -19,6 +19,8 @@ uniform vec2 uResolution;
 uniform float uTime;
 uniform int uScene;
 uniform int uQuality;
+uniform float uFogDensity;
+uniform float uShadowStrength;
 uniform vec3 uCamPos;
 uniform vec3 uCamForward;
 uniform vec3 uCamRight;
@@ -220,7 +222,8 @@ void main() {
 
         vec3 lightDir = normalize(vec3(0.65, 0.85, 0.45));
         float diff = max(dot(n, lightDir), 0.0);
-        float shadow = (uQuality > 0) ? calcSoftShadow(p + n * 0.004, lightDir, 0.02, 12.0, 12.0) : 1.0;
+        float rawShadow = (uQuality > 0) ? calcSoftShadow(p + n * 0.004, lightDir, 0.02, 12.0, 12.0) : 1.0;
+        float shadow = mix(1.0, rawShadow, uShadowStrength);
         float ao = (uQuality > 0) ? calcAO(p, n) : 1.0;
 
         vec3 halfDir = normalize(lightDir - rd);
@@ -231,7 +234,7 @@ void main() {
         lit += vec3(0.95, 0.97, 1.0) * spec * shadow * 0.45;
         lit += vec3(0.35, 0.55, 0.90) * fresnel * 0.25 * ao;
 
-        float fog = 1.0 - exp(-0.0018 * t * t);
+        float fog = 1.0 - exp(-uFogDensity * t * t);
         col = mix(lit, sky, clamp(fog, 0.0, 1.0));
     }
 

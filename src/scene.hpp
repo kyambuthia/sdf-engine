@@ -40,7 +40,7 @@ class SdfScene {
 public:
     void clear();
     void addNode(const SdfNodeGpu& node);
-    void buildPreset(int presetIndex, float time);
+    void buildPreset(int presetIndex, float time, float blendK = 0.45f, int opOverride = -1);
 
     const SceneUniformData& gpuData() const { return data_; }
     int nodeCount() const { return static_cast<int>(data_.meta[0]); }

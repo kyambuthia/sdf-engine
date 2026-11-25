@@ -9,7 +9,6 @@
       --bg: #0a0c10;
       --panel: rgba(10, 12, 16, 0.88);
       --border: #232832;
-      --border-hi: #3b4454;
       --text: #d6dce5;
       --muted: #6e7889;
       --accent: #e6edf3;
@@ -106,19 +105,78 @@
       transition: color 0.1s ease, background 0.1s ease;
     }
 
-    button:last-child {
-      border-right: 0;
-    }
-
-    button:hover {
-      color: var(--accent);
-      background: rgba(255, 255, 255, 0.04);
-    }
-
+    button:last-child { border-right: 0; }
+    button:hover { color: var(--accent); background: rgba(255, 255, 255, 0.04); }
     button.active {
       color: var(--accent);
       background: var(--active-bg);
       box-shadow: inset 0 -2px 0 var(--accent);
+    }
+
+    .drawer {
+      position: fixed;
+      top: 52px;
+      right: 12px;
+      width: 248px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      z-index: 10;
+      display: none;
+    }
+    .drawer.open { display: block; }
+
+    .row {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .row:last-child { border-bottom: 0; }
+
+    .row-head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+    .row-head span:last-child {
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 2px;
+      background: var(--border);
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      background: var(--accent);
+      cursor: pointer;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      border: 0;
+      border-radius: 0;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    .op-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border: 1px solid var(--border);
+    }
+    .op-grid button {
+      padding: 6px 2px;
+      font-size: 10px;
+      text-align: center;
     }
 
     .foot {
@@ -168,45 +226,89 @@
       </div>
 
       <div class="box">
+        <button id="params-btn" onclick="toggleParams(this)">PARAMS</button>
         <button id="pause-btn" onclick="togglePause(this)">PAUSE</button>
         <button onclick="Module.ccall('sdf_reset_camera', null, [], [])">RESET</button>
       </div>
     </div>
   </div>
 
-  <div class="foot">DRAG ORBIT · SCROLL ZOOM · 1-4 SCENE · SPACE PAUSE · R RESET</div>
+  <div class="drawer" id="params-drawer">
+    <div class="row">
+      <div class="row-head"><span>BLEND K</span><span id="val-blend">0.45</span></div>
+      <input type="range" min="0.01" max="1.20" step="0.01" value="0.45" oninput="setBlend(this.value)" />
+    </div>
+    <div class="row">
+      <div class="row-head"><span>SPEED</span><span id="val-speed">1.00</span></div>
+      <input type="range" min="0.00" max="3.00" step="0.05" value="1.00" oninput="setSpeed(this.value)" />
+    </div>
+    <div class="row">
+      <div class="row-head"><span>SHADOW</span><span id="val-shadow">1.00</span></div>
+      <input type="range" min="0.00" max="1.00" step="0.05" value="1.00" oninput="setShadow(this.value)" />
+    </div>
+    <div class="row">
+      <div class="row-head"><span>FOG</span><span id="val-fog">1.80</span></div>
+      <input type="range" min="0.00" max="8.00" step="0.10" value="1.80" oninput="setFog(this.value)" />
+    </div>
+    <div class="row">
+      <div class="row-head"><span>BOOL OP</span><span>OVERRIDE</span></div>
+      <div class="op-grid">
+        <button class="op-btn active" onclick="setOp(-1, this)">AUTO</button>
+        <button class="op-btn" onclick="setOp(3, this)">SMIN</button>
+        <button class="op-btn" onclick="setOp(0, this)">UNI</button>
+        <button class="op-btn" onclick="setOp(1, this)">SUB</button>
+        <button class="op-btn" onclick="setOp(2, this)">INT</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">DRAG ORBIT · SCROLL ZOOM · 1-4 SCENE · P PARAMS · SPACE PAUSE · R RESET</div>
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
   <script>
     function setScene(idx, btn) {
       document.querySelectorAll('.scene-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      if (typeof Module !== 'undefined' && Module.ccall) {
-        Module.ccall('sdf_set_scene', null, ['number'], [idx]);
-      }
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_scene', null, ['number'], [idx]);
     }
-
     function setRes(scale, btn) {
       document.querySelectorAll('.res-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      if (typeof Module !== 'undefined' && Module.ccall) {
-        Module.ccall('sdf_set_res_scale', null, ['number'], [scale]);
-      }
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_res_scale', null, ['number'], [scale]);
     }
-
     function setQual(q, btn) {
       document.querySelectorAll('.qual-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      if (typeof Module !== 'undefined' && Module.ccall) {
-        Module.ccall('sdf_set_quality', null, ['number'], [q]);
-      }
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_quality', null, ['number'], [q]);
     }
-
     function togglePause(btn) {
       btn.classList.toggle('active');
-      if (typeof Module !== 'undefined' && Module.ccall) {
-        Module.ccall('sdf_toggle_pause', null, [], []);
-      }
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_toggle_pause', null, [], []);
+    }
+    function toggleParams(btn) {
+      btn.classList.toggle('active');
+      document.getElementById('params-drawer').classList.toggle('open');
+    }
+    function setBlend(v) {
+      document.getElementById('val-blend').textContent = parseFloat(v).toFixed(2);
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_blend', null, ['number'], [parseFloat(v)]);
+    }
+    function setSpeed(v) {
+      document.getElementById('val-speed').textContent = parseFloat(v).toFixed(2);
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_speed', null, ['number'], [parseFloat(v)]);
+    }
+    function setShadow(v) {
+      document.getElementById('val-shadow').textContent = parseFloat(v).toFixed(2);
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_shadow', null, ['number'], [parseFloat(v)]);
+    }
+    function setFog(v) {
+      document.getElementById('val-fog').textContent = parseFloat(v).toFixed(2);
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_fog', null, ['number'], [parseFloat(v) * 0.001]);
+    }
+    function setOp(op, btn) {
+      document.querySelectorAll('.op-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_op_override', null, ['number'], [op]);
     }
 
     window.addEventListener('keydown', function(e) {
@@ -218,6 +320,9 @@
       } else if (e.code === 'Space') {
         var pb = document.getElementById('pause-btn');
         if (pb) pb.classList.toggle('active');
+      } else if (e.key === 'p' || e.key === 'P') {
+        var pr = document.getElementById('params-btn');
+        if (pr) toggleParams(pr);
       }
     });
 

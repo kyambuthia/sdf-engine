@@ -28,6 +28,11 @@ struct AppState {
     int fboHeight = 0;
     float resScale = 0.75f;
     int quality = 1; // 0 = Fast, 1 = High
+    float blendK = 0.45f;
+    float animSpeed = 1.0f;
+    float fogDensity = 0.0018f;
+    float shadowStrength = 1.0f;
+    int opOverride = -1;
 
     OrbitCamera camera;
     int width = 1280;
@@ -50,6 +55,8 @@ struct AppState {
     GLint uTime = -1;
     GLint uScene = -1;
     GLint uQuality = -1;
+    GLint uFogDensity = -1;
+    GLint uShadowStrength = -1;
     GLint uCamPos = -1;
     GLint uCamForward = -1;
     GLint uCamRight = -1;
@@ -92,6 +99,26 @@ void sdf_set_quality(int q) {
 float sdf_get_fps() {
     return gApp ? static_cast<float>(gApp->currentFps) : 0.0f;
 }
+
+void sdf_set_blend(float k) {
+    if (gApp) gApp->blendK = std::clamp(k, 0.01f, 1.5f);
+}
+
+void sdf_set_speed(float sp) {
+    if (gApp) gApp->animSpeed = std::clamp(sp, 0.0f, 4.0f);
+}
+
+void sdf_set_fog(float f) {
+    if (gApp) gApp->fogDensity = std::clamp(f, 0.0f, 0.02f);
+}
+
+void sdf_set_shadow(float sh) {
+    if (gApp) gApp->shadowStrength = std::clamp(sh, 0.0f, 1.0f);
+}
+
+void sdf_set_op_override(int op) {
+    if (gApp) gApp->opOverride = std::clamp(op, -1, 3);
+}
 }
 
 static void ensureFBO(AppState& app, int targetW, int targetH) {
@@ -127,6 +154,8 @@ static void cacheUniforms(AppState& app) {
     app.uTime = app.shader.uniformLocation("uTime");
     app.uScene = app.shader.uniformLocation("uScene");
     app.uQuality = app.shader.uniformLocation("uQuality");
+    app.uFogDensity = app.shader.uniformLocation("uFogDensity");
+    app.uShadowStrength = app.shader.uniformLocation("uShadowStrength");
     app.uCamPos = app.shader.uniformLocation("uCamPos");
     app.uCamForward = app.shader.uniformLocation("uCamForward");
     app.uCamRight = app.shader.uniformLocation("uCamRight");
@@ -216,7 +245,7 @@ static void mainLoop(void* userdata) {
     const double dt = static_cast<double>(now - app->lastTicks) * 0.001;
     app->lastTicks = now;
     if (!app->paused) {
-        app->simTime += dt;
+        app->simTime += dt * static_cast<double>(app->animSpeed);
     }
 
     app->fpsAccum += dt;
@@ -249,6 +278,8 @@ static void mainLoop(void* userdata) {
     glUniform1f(app->uTime, static_cast<float>(app->simTime));
     glUniform1i(app->uScene, app->sceneIndex);
     glUniform1i(app->uQuality, app->quality);
+    glUniform1f(app->uFogDensity, app->fogDensity);
+    glUniform1f(app->uShadowStrength, app->shadowStrength);
     glUniform3fv(app->uCamPos, 1, pos);
     glUniform3fv(app->uCamForward, 1, forward);
     glUniform3fv(app->uCamRight, 1, right);

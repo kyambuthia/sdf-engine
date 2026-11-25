@@ -17,9 +17,19 @@ void SdfScene::addNode(const SdfNodeGpu& node) {
     data_.meta[0] = static_cast<float>(count + 1);
 }
 
-void SdfScene::buildPreset(int presetIndex, float t) {
+void SdfScene::buildPreset(int presetIndex, float t, float blendK, int opOverride) {
     clear();
 
+    auto applyOverride = [&]() {
+        if (opOverride < 0) return;
+        int cnt = static_cast<int>(data_.meta[0]);
+        for (int i = 1; i < cnt; ++i) {
+            data_.nodes[i].op = static_cast<float>(opOverride);
+            if (opOverride == static_cast<int>(SdfOp::SmoothUnion)) {
+                data_.nodes[i].blend = blendK;
+            }
+        }
+    };
     if (presetIndex == 0) {
         // 01: Smooth Blending Playground
         addNode({
@@ -32,14 +42,14 @@ void SdfScene::buildPreset(int presetIndex, float t) {
             {std::sin(t * 1.1f) * 1.15f, 0.45f + std::cos(t * 1.7f) * 0.25f, std::cos(t * 0.9f) * 0.6f},
             static_cast<float>(SdfPrimitive::Sphere),
             {0.48f, 0.0f, 0.0f}, static_cast<float>(SdfOp::SmoothUnion),
-            {0.96f, 0.42f, 0.32f}, 0.45f,
+            {0.96f, 0.42f, 0.32f}, blendK,
             {0.0f, 0.0f, 0.0f}, 0.0f
         });
         addNode({
             {-std::cos(t * 0.9f) * 1.1f, 0.35f + std::sin(t * 1.3f) * 0.3f, std::sin(t * 1.2f) * 0.7f},
             static_cast<float>(SdfPrimitive::Sphere),
             {0.38f, 0.0f, 0.0f}, static_cast<float>(SdfOp::SmoothUnion),
-            {0.32f, 0.90f, 0.68f}, 0.45f,
+            {0.32f, 0.90f, 0.68f}, blendK,
             {0.0f, 0.0f, 0.0f}, 0.0f
         });
     } else if (presetIndex == 1) {
@@ -75,7 +85,7 @@ void SdfScene::buildPreset(int presetIndex, float t) {
         addNode({
             {0.0f, 0.45f, 0.0f}, static_cast<float>(SdfPrimitive::Sphere),
             {0.25f + 0.06f * std::sin(t * 2.0f), 0.0f, 0.0f}, static_cast<float>(SdfOp::SmoothUnion),
-            {0.32f, 0.90f, 0.68f}, 0.2f,
+            {0.32f, 0.90f, 0.68f}, blendK * 0.5f,
             {0.0f, 0.0f, 0.0f}, 0.0f
         });
     } else {
@@ -91,7 +101,7 @@ void SdfScene::buildPreset(int presetIndex, float t) {
             {0.0f, 0.55f + 0.15f * std::sin(t * 1.5f), 0.0f},
             static_cast<float>(SdfPrimitive::Sphere),
             {0.42f, 0.0f, 0.0f}, static_cast<float>(SdfOp::SmoothUnion),
-            {0.32f, 0.90f, 0.68f}, 0.25f,
+            {0.32f, 0.90f, 0.68f}, blendK * 0.6f,
             {0.0f, 0.0f, 0.0f}, 0.0f
         });
         // 4 corner pillars
@@ -106,4 +116,6 @@ void SdfScene::buildPreset(int presetIndex, float t) {
             });
         }
     }
+
+    applyOverride();
 }
