@@ -45,6 +45,21 @@
     }
     .hud button:hover { background: #30363d; }
     .hud button.active { background: #1f6feb; border-color: #58a6ff; }
+    .fps-badge {
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      font-weight: 600;
+      color: #3fb950;
+      background: rgba(63, 185, 80, 0.12);
+      border: 1px solid rgba(63, 185, 80, 0.35);
+      border-radius: 6px;
+      padding: 4px 8px;
+    }
+    .sep {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.15);
+    }
     .hint {
       position: fixed;
       bottom: 12px;
@@ -61,25 +76,61 @@
 <body>
   <div class="hud">
     <strong>SDF Engine</strong>
+    <span class="fps-badge" id="fps">-- FPS</span>
+    <span class="sep"></span>
     <button class="scene-btn active" onclick="setScene(0, this)">1: Smooth Blend</button>
     <button class="scene-btn" onclick="setScene(1, this)">2: CSG Booleans</button>
     <button class="scene-btn" onclick="setScene(2, this)">3: Infinite Repeat</button>
     <button class="scene-btn" onclick="setScene(3, this)">4: Pillars</button>
-    <button onclick="Module.ccall(sdf_toggle_pause, null, [], [])">Pause (Space)</button>
-    <button onclick="Module.ccall(sdf_reset_camera, null, [], [])">Reset (R)</button>
+    <span class="sep"></span>
+    <button class="res-btn" onclick="setRes(0.5, this)">0.5x</button>
+    <button class="res-btn active" onclick="setRes(0.75, this)">0.75x</button>
+    <button class="res-btn" onclick="setRes(1.0, this)">1.0x</button>
+    <span class="sep"></span>
+    <button class="qual-btn" onclick="setQual(0, this)">Fast</button>
+    <button class="qual-btn active" onclick="setQual(1, this)">High</button>
+    <span class="sep"></span>
+    <button onclick="Module.ccall('sdf_toggle_pause', null, [], [])">Pause (Space)</button>
+    <button onclick="Module.ccall('sdf_reset_camera', null, [], [])">Reset (R)</button>
   </div>
   <div class="hint">Drag to orbit • Scroll / +/- to zoom • Keys 1–4 switch scenes</div>
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
   <script>
     function setScene(idx, btn) {
-      document.querySelectorAll(.scene-btn).forEach(b => b.classList.remove(active));
-      if (btn) btn.classList.add(active);
-      if (typeof Module !== undefined && Module.ccall) {
-        Module.ccall(sdf_set_scene, null, [number], [idx]);
+      document.querySelectorAll('.scene-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      if (typeof Module !== 'undefined' && Module.ccall) {
+        Module.ccall('sdf_set_scene', null, ['number'], [idx]);
+      }
+    }
+    function setRes(scale, btn) {
+      document.querySelectorAll('.res-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      if (typeof Module !== 'undefined' && Module.ccall) {
+        Module.ccall('sdf_set_res_scale', null, ['number'], [scale]);
+      }
+    }
+    function setQual(q, btn) {
+      document.querySelectorAll('.qual-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      if (typeof Module !== 'undefined' && Module.ccall) {
+        Module.ccall('sdf_set_quality', null, ['number'], [q]);
       }
     }
     var Module = {
-      canvas: document.getElementById(canvas)
+      canvas: document.getElementById('canvas'),
+      onRuntimeInitialized: function() {
+        setInterval(function() {
+          if (Module.ccall) {
+            var fps = Module.ccall('sdf_get_fps', 'number', [], []);
+            var el = document.getElementById('fps');
+            if (el && fps > 0) {
+              var ms = (1000.0 / fps).toFixed(1);
+              el.textContent = fps.toFixed(1) + ' FPS (' + ms + ' ms)';
+            }
+          }
+        }, 500);
+      }
     };
   </script>
   {{{ SCRIPT }}}

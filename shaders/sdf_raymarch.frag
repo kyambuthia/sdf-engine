@@ -4,6 +4,7 @@ precision highp float;
 uniform vec2 uResolution;
 uniform float uTime;
 uniform int uScene;
+uniform int uQuality;
 uniform vec3 uCamPos;
 uniform vec3 uCamForward;
 uniform vec3 uCamRight;
@@ -148,7 +149,9 @@ vec2 raymarch(vec3 ro, vec3 rd) {
     float mat = -1.0;
     const float maxDist = 45.0;
 
+    int maxSteps = (uQuality > 0) ? 110 : 56;
     for (int i = 0; i < 110; i++) {
+        if (i >= maxSteps) break;
         vec3 p = ro + rd * t;
         vec2 hit = mapScene(p);
         if (hit.x < 0.001) {
@@ -232,8 +235,8 @@ void main() {
 
         vec3 lightDir = normalize(vec3(0.65, 0.85, 0.45));
         float diff = max(dot(n, lightDir), 0.0);
-        float shadow = calcSoftShadow(p + n * 0.004, lightDir, 0.02, 12.0, 12.0);
-        float ao = calcAO(p, n);
+        float shadow = (uQuality > 0) ? calcSoftShadow(p + n * 0.004, lightDir, 0.02, 12.0, 12.0) : 1.0;
+        float ao = (uQuality > 0) ? calcAO(p, n) : 1.0;
 
         vec3 halfDir = normalize(lightDir - rd);
         float spec = pow(max(dot(n, halfDir), 0.0), 48.0);

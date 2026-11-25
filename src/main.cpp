@@ -8,6 +8,8 @@
 #include <emscripten.h>
 #endif
 
+#include <algorithm>
+#include <cstdio>
 #include <string>
 
 struct AppState {
@@ -15,6 +17,14 @@ struct AppState {
     SDL_GLContext glContext = nullptr;
     ShaderProgram shader;
     GLuint vao = 0;
+
+    // Offscreen FBO for dynamic resolution scaling
+    GLuint fbo = 0;
+    GLuint fboTex = 0;
+    int fboWidth = 0;
+    int fboHeight = 0;
+    float resScale = 0.75f;
+    int quality = 1; // 0 = Fast, 1 = High
 
     OrbitCamera camera;
     int width = 1280;
@@ -27,10 +37,16 @@ struct AppState {
     double simTime = 0.0;
     Uint64 lastTicks = 0;
 
+    // FPS tracking
+    double fpsAccum = 0.0;
+    int fpsFrames = 0;
+    double currentFps = 0.0;
+
     // Cached uniform locations
     GLint uResolution = -1;
     GLint uTime = -1;
     GLint uScene = -1;
+    GLint uQuality = -1;
     GLint uCamPos = -1;
     GLint uCamForward = -1;
     GLint uCamRight = -1;
@@ -57,12 +73,57 @@ void sdf_reset_camera() {
         gApp->camera.reset();
     }
 }
+
+void sdf_set_res_scale(float scale) {
+    if (gApp) {
+        gApp->resScale = std::clamp(scale, 0.25f, 1.0f);
+    }
+}
+
+void sdf_set_quality(int q) {
+    if (gApp) {
+        gApp->quality = (q > 0) ? 1 : 0;
+    }
+}
+
+float sdf_get_fps() {
+    return gApp ? static_cast<float>(gApp->currentFps) : 0.0f;
+}
+}
+
+static void ensureFBO(AppState& app, int targetW, int targetH) {
+    if (targetW < 1) targetW = 1;
+    if (targetH < 1) targetH = 1;
+    if (app.fbo != 0 && app.fboWidth == targetW && app.fboHeight == targetH) {
+        return;
+    }
+
+    if (app.fboTex != 0) glDeleteTextures(1, &app.fboTex);
+    if (app.fbo != 0) glDeleteFramebuffers(1, &app.fbo);
+
+    glGenFramebuffers(1, &app.fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, app.fbo);
+
+    glGenTextures(1, &app.fboTex);
+    glBindTexture(GL_TEXTURE_2D, app.fboTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, targetW, targetH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, app.fboTex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    app.fboWidth = targetW;
+    app.fboHeight = targetH;
 }
 
 static void cacheUniforms(AppState& app) {
     app.uResolution = app.shader.uniformLocation("uResolution");
     app.uTime = app.shader.uniformLocation("uTime");
     app.uScene = app.shader.uniformLocation("uScene");
+    app.uQuality = app.shader.uniformLocation("uQuality");
     app.uCamPos = app.shader.uniformLocation("uCamPos");
     app.uCamForward = app.shader.uniformLocation("uCamForward");
     app.uCamRight = app.shader.uniformLocation("uCamRight");
@@ -79,7 +140,6 @@ static void handleEvents(AppState& app) {
 
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 SDL_GetWindowSizeInPixels(app.window, &app.width, &app.height);
-                glViewport(0, 0, app.width, app.height);
                 break;
 
             case SDL_EVENT_KEY_DOWN:
@@ -156,16 +216,36 @@ static void mainLoop(void* userdata) {
         app->simTime += dt;
     }
 
+    app->fpsAccum += dt;
+    app->fpsFrames++;
+    if (app->fpsAccum >= 0.5) {
+        app->currentFps = static_cast<double>(app->fpsFrames) / app->fpsAccum;
+        app->fpsAccum = 0.0;
+        app->fpsFrames = 0;
+#ifndef __EMSCRIPTEN__
+        char title[128];
+        std::snprintf(title, sizeof(title), "SDF Engine — %.1f FPS", app->currentFps);
+        SDL_SetWindowTitle(app->window, title);
+#endif
+    }
+
     SDL_GetWindowSizeInPixels(app->window, &app->width, &app->height);
-    glViewport(0, 0, app->width, app->height);
+    const int renderW = std::max(1, static_cast<int>(app->width * app->resScale));
+    const int renderH = std::max(1, static_cast<int>(app->height * app->resScale));
+
+    ensureFBO(*app, renderW, renderH);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, app->fbo);
+    glViewport(0, 0, renderW, renderH);
 
     float pos[3], forward[3], right[3], up[3];
     app->camera.computeBasis(pos, forward, right, up);
 
     app->shader.use();
-    glUniform2f(app->uResolution, static_cast<float>(app->width), static_cast<float>(app->height));
+    glUniform2f(app->uResolution, static_cast<float>(renderW), static_cast<float>(renderH));
     glUniform1f(app->uTime, static_cast<float>(app->simTime));
     glUniform1i(app->uScene, app->sceneIndex);
+    glUniform1i(app->uQuality, app->quality);
     glUniform3fv(app->uCamPos, 1, pos);
     glUniform3fv(app->uCamForward, 1, forward);
     glUniform3fv(app->uCamRight, 1, right);
@@ -174,6 +254,12 @@ static void mainLoop(void* userdata) {
     glBindVertexArray(app->vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
+
+    // Blit offscreen FBO to screen
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, app->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBlitFramebuffer(0, 0, renderW, renderH, 0, 0, app->width, app->height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     SDL_GL_SwapWindow(app->window);
 }
@@ -243,6 +329,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
+    if (app.fboTex != 0) glDeleteTextures(1, &app.fboTex);
+    if (app.fbo != 0) glDeleteFramebuffers(1, &app.fbo);
     glDeleteVertexArrays(1, &app.vao);
     app.shader.destroy();
     SDL_GL_DestroyContext(app.glContext);
