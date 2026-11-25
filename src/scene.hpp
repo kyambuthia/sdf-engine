@@ -32,7 +32,8 @@ struct alignas(16) SdfNodeGpu {
 constexpr int MAX_SDF_NODES = 32;
 
 struct alignas(16) SceneUniformData {
-    float meta[4]; // x = nodeCount, y = groundY, z = repeatSpacing (0 = off), w = unused
+    float meta[4];   // x = nodeCount, y = groundY, z = repeatSpacing (0 = off), w = unused
+    float bounds[4]; // xyz = bounding sphere center, w = radius (0 = unbounded)
     SdfNodeGpu nodes[MAX_SDF_NODES];
 };
 

@@ -118,4 +118,30 @@ void SdfScene::buildPreset(int presetIndex, float t, float blendK, int opOverrid
     }
 
     applyOverride();
+
+    // Compute conservative bounding sphere for ray-sphere early-out (when not repeating)
+    if (data_.meta[2] > 0.01f || nodeCount() == 0) {
+        data_.bounds[0] = 0.0f;
+        data_.bounds[1] = 0.0f;
+        data_.bounds[2] = 0.0f;
+        data_.bounds[3] = 0.0f;
+    } else {
+        float cx = 0.0f, cy = 0.45f, cz = 0.0f;
+        float maxR = 0.0f;
+        for (int i = 0; i < nodeCount(); ++i) {
+            const auto& n = data_.nodes[i];
+            float dx = n.pos[0] - cx;
+            float dy = n.pos[1] - cy;
+            float dz = n.pos[2] - cz;
+            float centerDist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            float ext = std::sqrt(n.size[0] * n.size[0] + n.size[1] * n.size[1] + n.size[2] * n.size[2]);
+            // Torus outer radius + minor radius or sphere/box/capsule + blend margin
+            float nodeRadius = ext + n.size[1] + std::max(0.5f, n.blend) + 0.35f;
+            maxR = std::max(maxR, centerDist + nodeRadius);
+        }
+        data_.bounds[0] = cx;
+        data_.bounds[1] = cy;
+        data_.bounds[2] = cz;
+        data_.bounds[3] = maxR;
+    }
 }
