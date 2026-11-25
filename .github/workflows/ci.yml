@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+      - name: Configure & Build WebAssembly
+        run: |
+          emcmake cmake -B build-web -G Ninja
+          cmake --build build-web
+      - name: Verify Artifacts
+        run: |
+          test -f build-web/sdf_engine.html
+          test -f build-web/sdf_engine.js
+          test -f build-web/sdf_engine.wasm
+          test -f build-web/sdf_engine.data
+
+  build-desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL3 Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake libgl-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev
+      - name: Configure & Build Desktop
+        run: |
+          cmake --preset desktop
+          cmake --build --preset desktop

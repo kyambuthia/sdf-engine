@@ -10,6 +10,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -17,6 +18,7 @@ struct AppState {
     SDL_Window* window = nullptr;
     SDL_GLContext glContext = nullptr;
     ShaderProgram shader;
+    ShaderProgram overlay2d;
     GLuint vao = 0;
     GLuint sceneUbo = 0;
     SdfScene scene;
@@ -28,11 +30,16 @@ struct AppState {
     int fboHeight = 0;
     float resScale = 0.75f;
     int quality = 1; // 0 = Fast, 1 = High
+
     float blendK = 0.45f;
     float animSpeed = 1.0f;
     float fogDensity = 0.0018f;
     float shadowStrength = 1.0f;
     int opOverride = -1;
+
+    bool show2dOverlay = true;
+    bool customEditMode = false;
+    int selectedNode = -1;
 
     OrbitCamera camera;
     int width = 1280;
@@ -40,6 +47,9 @@ struct AppState {
     int sceneIndex = 0;
     bool paused = false;
     bool dragging = false;
+    float downX = 0.0f;
+    float downY = 0.0f;
+    float dragDist = 0.0f;
     bool running = true;
 
     double simTime = 0.0;
@@ -50,7 +60,7 @@ struct AppState {
     int fpsFrames = 0;
     double currentFps = 0.0;
 
-    // Cached uniform locations
+    // Cached uniform locations (3D)
     GLint uResolution = -1;
     GLint uTime = -1;
     GLint uScene = -1;
@@ -61,6 +71,11 @@ struct AppState {
     GLint uCamForward = -1;
     GLint uCamRight = -1;
     GLint uCamUp = -1;
+
+    // Cached uniform locations (2D overlay)
+    GLint u2dResolution = -1;
+    GLint u2dTime = -1;
+    GLint u2dHasSelection = -1;
 };
 
 static AppState* gApp = nullptr;
@@ -69,31 +84,29 @@ extern "C" {
 void sdf_set_scene(int scene) {
     if (gApp && scene >= 0 && scene <= 3) {
         gApp->sceneIndex = scene;
+        gApp->customEditMode = false;
+        gApp->selectedNode = -1;
     }
 }
 
 void sdf_toggle_pause() {
-    if (gApp) {
-        gApp->paused = !gApp->paused;
-    }
+    if (gApp) gApp->paused = !gApp->paused;
 }
 
 void sdf_reset_camera() {
     if (gApp) {
         gApp->camera.reset();
+        gApp->customEditMode = false;
+        gApp->selectedNode = -1;
     }
 }
 
 void sdf_set_res_scale(float scale) {
-    if (gApp) {
-        gApp->resScale = std::clamp(scale, 0.25f, 1.0f);
-    }
+    if (gApp) gApp->resScale = std::clamp(scale, 0.25f, 1.0f);
 }
 
 void sdf_set_quality(int q) {
-    if (gApp) {
-        gApp->quality = (q > 0) ? 1 : 0;
-    }
+    if (gApp) gApp->quality = (q > 0) ? 1 : 0;
 }
 
 float sdf_get_fps() {
@@ -119,6 +132,111 @@ void sdf_set_shadow(float sh) {
 void sdf_set_op_override(int op) {
     if (gApp) gApp->opOverride = std::clamp(op, -1, 3);
 }
+
+void sdf_toggle_2d_overlay() {
+    if (gApp) gApp->show2dOverlay = !gApp->show2dOverlay;
+}
+
+int sdf_get_selected_node() {
+    return gApp ? gApp->selectedNode : -1;
+}
+
+int sdf_get_node_count() {
+    return gApp ? gApp->scene.nodeCount() : 0;
+}
+
+float sdf_get_node_prop(int idx, int prop) {
+    if (!gApp) return 0.0f;
+    const SdfNodeGpu* n = gApp->scene.nodeAt(idx);
+    if (!n) return 0.0f;
+    if (prop >= 0 && prop <= 2) return n->pos[prop];
+    if (prop >= 3 && prop <= 5) return n->size[prop - 3];
+    if (prop == 6) return n->type;
+    if (prop == 7) return n->op;
+    if (prop == 8) return n->blend;
+    return 0.0f;
+}
+
+void sdf_set_node_pos(int idx, float x, float y, float z) {
+    if (!gApp) return;
+    gApp->customEditMode = true;
+    if (SdfNodeGpu* n = gApp->scene.nodeAt(idx)) {
+        n->pos[0] = x; n->pos[1] = y; n->pos[2] = z;
+        gApp->scene.recomputeBounds();
+    }
+}
+
+void sdf_set_node_size(int idx, float sx, float sy, float sz) {
+    if (!gApp) return;
+    gApp->customEditMode = true;
+    if (SdfNodeGpu* n = gApp->scene.nodeAt(idx)) {
+        n->size[0] = std::max(0.05f, sx);
+        n->size[1] = std::max(0.05f, sy);
+        n->size[2] = std::max(0.05f, sz);
+        gApp->scene.recomputeBounds();
+    }
+}
+
+void sdf_set_node_op(int idx, int op) {
+    if (!gApp) return;
+    gApp->customEditMode = true;
+    if (SdfNodeGpu* n = gApp->scene.nodeAt(idx)) {
+        n->op = static_cast<float>(std::clamp(op, 0, 3));
+        if (op == static_cast<int>(SdfOp::SmoothUnion) && n->blend < 0.05f) {
+            n->blend = gApp->blendK;
+        }
+    }
+}
+
+void sdf_add_node(int type) {
+    if (!gApp) return;
+    gApp->customEditMode = true;
+    SdfNodeGpu node{};
+    node.pos[0] = 0.0f; node.pos[1] = 0.5f; node.pos[2] = 0.0f;
+    node.type = static_cast<float>(std::clamp(type, 0, 3));
+    node.size[0] = 0.45f; node.size[1] = 0.22f; node.size[2] = 0.45f;
+    node.op = static_cast<float>(SdfOp::SmoothUnion);
+    node.color[0] = 0.92f; node.color[1] = 0.72f; node.color[2] = 0.28f;
+    node.blend = gApp->blendK;
+    gApp->scene.addNode(node);
+    gApp->scene.recomputeBounds();
+    gApp->selectedNode = gApp->scene.nodeCount() - 1;
+}
+
+void sdf_remove_node(int idx) {
+    if (!gApp) return;
+    gApp->customEditMode = true;
+    gApp->scene.removeNode(idx);
+    if (gApp->selectedNode >= gApp->scene.nodeCount()) {
+        gApp->selectedNode = gApp->scene.nodeCount() - 1;
+    }
+}
+}
+
+static void pickAtScreenPos(AppState& app, float winX, float winY) {
+    int winW = 1, winH = 1;
+    SDL_GetWindowSize(app.window, &winW, &winH);
+    if (winW <= 0 || winH <= 0) return;
+
+    // Match fragment shader UV: (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y
+    // Note: SDL mouse Y is top-down, GL gl_FragCoord.y is bottom-up.
+    float uvX = (winX - 0.5f * static_cast<float>(winW)) / static_cast<float>(winH);
+    float uvY = ((static_cast<float>(winH) - winY) - 0.5f * static_cast<float>(winH)) / static_cast<float>(winH);
+
+    float pos[3], forward[3], right[3], up[3];
+    app.camera.computeBasis(pos, forward, right, up);
+
+    const float focalLength = 1.65f;
+    float rd[3] = {
+        right[0] * uvX + up[0] * uvY + forward[0] * focalLength,
+        right[1] * uvX + up[1] * uvY + forward[1] * focalLength,
+        right[2] * uvX + up[2] * uvY + forward[2] * focalLength
+    };
+    float len = std::sqrt(rd[0] * rd[0] + rd[1] * rd[1] + rd[2] * rd[2]);
+    if (len > 1e-6f) {
+        rd[0] /= len; rd[1] /= len; rd[2] /= len;
+    }
+    app.selectedNode = app.scene.pickNode(pos, rd);
 }
 
 static void ensureFBO(AppState& app, int targetW, int targetH) {
@@ -160,6 +278,10 @@ static void cacheUniforms(AppState& app) {
     app.uCamForward = app.shader.uniformLocation("uCamForward");
     app.uCamRight = app.shader.uniformLocation("uCamRight");
     app.uCamUp = app.shader.uniformLocation("uCamUp");
+
+    app.u2dResolution = app.overlay2d.uniformLocation("uResolution");
+    app.u2dTime = app.overlay2d.uniformLocation("uTime");
+    app.u2dHasSelection = app.overlay2d.uniformLocation("uHasSelection");
 }
 
 static void handleEvents(AppState& app) {
@@ -176,12 +298,13 @@ static void handleEvents(AppState& app) {
 
             case SDL_EVENT_KEY_DOWN:
                 switch (event.key.key) {
-                    case SDLK_1: app.sceneIndex = 0; break;
-                    case SDLK_2: app.sceneIndex = 1; break;
-                    case SDLK_3: app.sceneIndex = 2; break;
-                    case SDLK_4: app.sceneIndex = 3; break;
+                    case SDLK_1: sdf_set_scene(0); break;
+                    case SDLK_2: sdf_set_scene(1); break;
+                    case SDLK_3: sdf_set_scene(2); break;
+                    case SDLK_4: sdf_set_scene(3); break;
                     case SDLK_SPACE: app.paused = !app.paused; break;
-                    case SDLK_R: app.camera.reset(); break;
+                    case SDLK_R: sdf_reset_camera(); break;
+                    case SDLK_V: app.show2dOverlay = !app.show2dOverlay; break;
                     case SDLK_EQUALS:
                     case SDLK_PLUS:
                         app.camera.zoom(1.0f);
@@ -200,17 +323,24 @@ static void handleEvents(AppState& app) {
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     app.dragging = true;
+                    app.downX = event.button.x;
+                    app.downY = event.button.y;
+                    app.dragDist = 0.0f;
                 }
                 break;
 
             case SDL_EVENT_MOUSE_BUTTON_UP:
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     app.dragging = false;
+                    if (app.dragDist < 5.0f) {
+                        pickAtScreenPos(app, event.button.x, event.button.y);
+                    }
                 }
                 break;
 
             case SDL_EVENT_MOUSE_MOTION:
                 if (app.dragging) {
+                    app.dragDist += std::abs(event.motion.xrel) + std::abs(event.motion.yrel);
                     app.camera.orbit(event.motion.xrel, event.motion.yrel);
                 }
                 break;
@@ -273,7 +403,9 @@ static void mainLoop(void* userdata) {
     float pos[3], forward[3], right[3], up[3];
     app->camera.computeBasis(pos, forward, right, up);
 
-    app->scene.buildPreset(app->sceneIndex, static_cast<float>(app->simTime), app->blendK, app->opOverride);
+    if (!app->customEditMode) {
+        app->scene.buildPreset(app->sceneIndex, static_cast<float>(app->simTime), app->blendK, app->opOverride);
+    }
     glBindBuffer(GL_UNIFORM_BUFFER, app->sceneUbo);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SceneUniformData), &app->scene.gpuData());
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -292,14 +424,27 @@ static void mainLoop(void* userdata) {
 
     glBindVertexArray(app->vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBindVertexArray(0);
 
-    // Blit offscreen FBO to screen
+    // Blit offscreen 3D FBO to default framebuffer
     glBindFramebuffer(GL_READ_FRAMEBUFFER, app->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     glBlitFramebuffer(0, 0, renderW, renderH, 0, 0, app->width, app->height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    // Crisp native-res 2D SDF overlay pass
+    if (app->show2dOverlay) {
+        glViewport(0, 0, app->width, app->height);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        app->overlay2d.use();
+        glUniform2f(app->u2dResolution, static_cast<float>(app->width), static_cast<float>(app->height));
+        glUniform1f(app->u2dTime, static_cast<float>(app->simTime));
+        glUniform1i(app->u2dHasSelection, (app->selectedNode >= 0) ? 1 : 0);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDisable(GL_BLEND);
+    }
+
+    glBindVertexArray(0);
     SDL_GL_SwapWindow(app->window);
 }
 
@@ -349,7 +494,8 @@ int main(int argc, char* argv[]) {
     const std::string shaderDir = "shaders";
 #endif
 
-    if (!app.shader.loadFromFiles(shaderDir + "/fullscreen.vert", shaderDir + "/sdf_raymarch.frag")) {
+    if (!app.shader.loadFromFiles(shaderDir + "/fullscreen.vert", shaderDir + "/sdf_raymarch.frag") ||
+        !app.overlay2d.loadFromFiles(shaderDir + "/fullscreen.vert", shaderDir + "/sdf_2d.frag")) {
         SDL_GL_DestroyContext(app.glContext);
         SDL_DestroyWindow(app.window);
         SDL_Quit();
@@ -382,6 +528,7 @@ int main(int argc, char* argv[]) {
     if (app.fbo != 0) glDeleteFramebuffers(1, &app.fbo);
     if (app.sceneUbo != 0) glDeleteBuffers(1, &app.sceneUbo);
     glDeleteVertexArrays(1, &app.vao);
+    app.overlay2d.destroy();
     app.shader.destroy();
     SDL_GL_DestroyContext(app.glContext);
     SDL_DestroyWindow(app.window);

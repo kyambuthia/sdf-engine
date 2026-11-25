@@ -117,13 +117,24 @@
       position: fixed;
       top: 52px;
       right: 12px;
-      width: 248px;
+      width: 256px;
       background: var(--panel);
       border: 1px solid var(--border);
       z-index: 10;
       display: none;
     }
     .drawer.open { display: block; }
+
+    .sec-head {
+      padding: 7px 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+    }
 
     .row {
       padding: 8px 10px;
@@ -168,12 +179,17 @@
       cursor: pointer;
     }
 
-    .op-grid {
+    .grid-5 {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       border: 1px solid var(--border);
     }
-    .op-grid button {
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--border);
+    }
+    .grid-5 button, .grid-4 button {
       padding: 6px 2px;
       font-size: 10px;
       text-align: center;
@@ -226,14 +242,16 @@
       </div>
 
       <div class="box">
-        <button id="params-btn" onclick="toggleParams(this)">PARAMS</button>
+        <button id="hud2d-btn" class="active" onclick="toggle2d(this)">2D SDF</button>
+        <button id="params-btn" onclick="toggleParams(this)">INSPECT</button>
         <button id="pause-btn" onclick="togglePause(this)">PAUSE</button>
-        <button onclick="Module.ccall('sdf_reset_camera', null, [], [])">RESET</button>
+        <button onclick="resetAll()">RESET</button>
       </div>
     </div>
   </div>
 
   <div class="drawer" id="params-drawer">
+    <div class="sec-head"><span>GLOBAL PARAMS</span><span id="node-count">0 NODES</span></div>
     <div class="row">
       <div class="row-head"><span>BLEND K</span><span id="val-blend">0.45</span></div>
       <input type="range" min="0.01" max="1.20" step="0.01" value="0.45" oninput="setBlend(this.value)" />
@@ -252,7 +270,7 @@
     </div>
     <div class="row">
       <div class="row-head"><span>BOOL OP</span><span>OVERRIDE</span></div>
-      <div class="op-grid">
+      <div class="grid-5">
         <button class="op-btn active" onclick="setOp(-1, this)">AUTO</button>
         <button class="op-btn" onclick="setOp(3, this)">SMIN</button>
         <button class="op-btn" onclick="setOp(0, this)">UNI</button>
@@ -260,12 +278,51 @@
         <button class="op-btn" onclick="setOp(2, this)">INT</button>
       </div>
     </div>
+
+    <div class="sec-head"><span>NODE INSPECTOR</span><span id="sel-label">CLICK SHAPE</span></div>
+    <div id="node-editor" style="display:none;">
+      <div class="row">
+        <div class="row-head"><span>POS X</span><span id="val-px">0.00</span></div>
+        <input id="sl-px" type="range" min="-2.50" max="2.50" step="0.05" oninput="updateNodePos()" />
+      </div>
+      <div class="row">
+        <div class="row-head"><span>POS Y</span><span id="val-py">0.00</span></div>
+        <input id="sl-py" type="range" min="-0.50" max="2.50" step="0.05" oninput="updateNodePos()" />
+      </div>
+      <div class="row">
+        <div class="row-head"><span>POS Z</span><span id="val-pz">0.00</span></div>
+        <input id="sl-pz" type="range" min="-2.50" max="2.50" step="0.05" oninput="updateNodePos()" />
+      </div>
+      <div class="row">
+        <div class="row-head"><span>SIZE</span><span id="val-sx">0.50</span></div>
+        <input id="sl-sx" type="range" min="0.10" max="1.50" step="0.02" oninput="updateNodeSize()" />
+      </div>
+      <div class="row">
+        <div class="grid-4">
+          <button onclick="setNodeOp(3)">SMIN</button>
+          <button onclick="setNodeOp(0)">UNI</button>
+          <button onclick="setNodeOp(1)">SUB</button>
+          <button onclick="delNode()" style="color:var(--bad);">DEL</button>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-head"><span>ADD NODE</span><span>PRIMITIVE</span></div>
+      <div class="grid-4">
+        <button onclick="addNode(0)">+SPH</button>
+        <button onclick="addNode(1)">+BOX</button>
+        <button onclick="addNode(2)">+TOR</button>
+        <button onclick="addNode(3)">+CAP</button>
+      </div>
+    </div>
   </div>
 
-  <div class="foot">DRAG ORBIT · SCROLL ZOOM · 1-4 SCENE · P PARAMS · SPACE PAUSE · R RESET</div>
+  <div class="foot">CLICK PICK · DRAG ORBIT · SCROLL ZOOM · 1-4 SCENE · P INSPECT · V 2D SDF · SPACE PAUSE</div>
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
   <script>
+    var selectedIdx = -1;
+
     function setScene(idx, btn) {
       document.querySelectorAll('.scene-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
@@ -281,6 +338,10 @@
       if (btn) btn.classList.add('active');
       if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_quality', null, ['number'], [q]);
     }
+    function toggle2d(btn) {
+      btn.classList.toggle('active');
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_toggle_2d_overlay', null, [], []);
+    }
     function togglePause(btn) {
       btn.classList.toggle('active');
       if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_toggle_pause', null, [], []);
@@ -288,6 +349,9 @@
     function toggleParams(btn) {
       btn.classList.toggle('active');
       document.getElementById('params-drawer').classList.toggle('open');
+    }
+    function resetAll() {
+      if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_reset_camera', null, [], []);
     }
     function setBlend(v) {
       document.getElementById('val-blend').textContent = parseFloat(v).toFixed(2);
@@ -311,6 +375,80 @@
       if (typeof Module !== 'undefined' && Module.ccall) Module.ccall('sdf_set_op_override', null, ['number'], [op]);
     }
 
+    function syncInspector(forceFields) {
+      if (typeof Module === 'undefined' || !Module.ccall) return;
+      var cnt = Module.ccall('sdf_get_node_count', 'number', [], []);
+      document.getElementById('node-count').textContent = cnt + ' NODES';
+      var sel = Module.ccall('sdf_get_selected_node', 'number', [], []);
+      var changed = (sel !== selectedIdx);
+      selectedIdx = sel;
+
+      var editor = document.getElementById('node-editor');
+      var lbl = document.getElementById('sel-label');
+      if (sel < 0) {
+        lbl.textContent = 'CLICK SHAPE';
+        editor.style.display = 'none';
+        return;
+      }
+      var names = ['SPHERE', 'BOX', 'TORUS', 'CAPSULE'];
+      var kind = Math.round(Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [sel, 6]));
+      lbl.textContent = '#' + sel + ' ' + (names[kind] || 'NODE');
+      editor.style.display = 'block';
+
+      if (changed || forceFields) {
+        var px = Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [sel, 0]);
+        var py = Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [sel, 1]);
+        var pz = Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [sel, 2]);
+        var sx = Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [sel, 3]);
+        document.getElementById('sl-px').value = px;
+        document.getElementById('sl-py').value = py;
+        document.getElementById('sl-pz').value = pz;
+        document.getElementById('sl-sx').value = sx;
+        document.getElementById('val-px').textContent = px.toFixed(2);
+        document.getElementById('val-py').textContent = py.toFixed(2);
+        document.getElementById('val-pz').textContent = pz.toFixed(2);
+        document.getElementById('val-sx').textContent = sx.toFixed(2);
+      }
+    }
+
+    function updateNodePos() {
+      if (selectedIdx < 0 || !Module.ccall) return;
+      var px = parseFloat(document.getElementById('sl-px').value);
+      var py = parseFloat(document.getElementById('sl-py').value);
+      var pz = parseFloat(document.getElementById('sl-pz').value);
+      document.getElementById('val-px').textContent = px.toFixed(2);
+      document.getElementById('val-py').textContent = py.toFixed(2);
+      document.getElementById('val-pz').textContent = pz.toFixed(2);
+      Module.ccall('sdf_set_node_pos', null, ['number', 'number', 'number', 'number'], [selectedIdx, px, py, pz]);
+    }
+
+    function updateNodeSize() {
+      if (selectedIdx < 0 || !Module.ccall) return;
+      var sx = parseFloat(document.getElementById('sl-sx').value);
+      document.getElementById('val-sx').textContent = sx.toFixed(2);
+      var sy = Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [selectedIdx, 4]);
+      var sz = Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [selectedIdx, 5]);
+      var kind = Math.round(Module.ccall('sdf_get_node_prop', 'number', ['number', 'number'], [selectedIdx, 6]));
+      if (kind === 1) { sy = sx; sz = sx; }
+      Module.ccall('sdf_set_node_size', null, ['number', 'number', 'number', 'number'], [selectedIdx, sx, sy, sz]);
+    }
+
+    function setNodeOp(op) {
+      if (selectedIdx >= 0 && Module.ccall) Module.ccall('sdf_set_node_op', null, ['number', 'number'], [selectedIdx, op]);
+    }
+    function addNode(type) {
+      if (Module.ccall) {
+        Module.ccall('sdf_add_node', null, ['number'], [type]);
+        syncInspector(true);
+      }
+    }
+    function delNode() {
+      if (selectedIdx >= 0 && Module.ccall) {
+        Module.ccall('sdf_remove_node', null, ['number'], [selectedIdx]);
+        syncInspector(true);
+      }
+    }
+
     window.addEventListener('keydown', function(e) {
       if (e.key >= '1' && e.key <= '4') {
         var btns = document.querySelectorAll('.scene-btn');
@@ -323,6 +461,9 @@
       } else if (e.key === 'p' || e.key === 'P') {
         var pr = document.getElementById('params-btn');
         if (pr) toggleParams(pr);
+      } else if (e.key === 'v' || e.key === 'V') {
+        var h2 = document.getElementById('hud2d-btn');
+        if (h2) h2.classList.toggle('active');
       }
     });
 
@@ -338,8 +479,9 @@
               el.textContent = fps.toFixed(1) + ' FPS · ' + ms + 'MS';
               el.style.color = fps >= 50 ? 'var(--ok)' : (fps >= 24 ? 'var(--warn)' : 'var(--bad)');
             }
+            syncInspector(false);
           }
-        }, 500);
+        }, 250);
       }
     };
   </script>

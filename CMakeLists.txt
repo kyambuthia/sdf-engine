@@ -38,7 +38,7 @@ if(EMSCRIPTEN)
         "-sALLOW_MEMORY_GROWTH=1"
         "--preload-file" "${CMAKE_SOURCE_DIR}/shaders@/shaders"
         "--shell-file" "${CMAKE_SOURCE_DIR}/web/shell.html"
-        "-sEXPORTED_FUNCTIONS=[\"_main\",\"_sdf_set_scene\",\"_sdf_toggle_pause\",\"_sdf_reset_camera\",\"_sdf_set_res_scale\",\"_sdf_set_quality\",\"_sdf_get_fps\",\"_sdf_set_blend\",\"_sdf_set_speed\",\"_sdf_set_fog\",\"_sdf_set_shadow\",\"_sdf_set_op_override\"]"
+        "-sEXPORTED_FUNCTIONS=[\"_main\",\"_sdf_set_scene\",\"_sdf_toggle_pause\",\"_sdf_reset_camera\",\"_sdf_set_res_scale\",\"_sdf_set_quality\",\"_sdf_get_fps\",\"_sdf_set_blend\",\"_sdf_set_speed\",\"_sdf_set_fog\",\"_sdf_set_shadow\",\"_sdf_set_op_override\",\"_sdf_toggle_2d_overlay\",\"_sdf_get_selected_node\",\"_sdf_get_node_count\",\"_sdf_get_node_prop\",\"_sdf_set_node_pos\",\"_sdf_set_node_size\",\"_sdf_set_node_op\",\"_sdf_add_node\",\"_sdf_remove_node\"]"
         "-sEXPORTED_RUNTIME_METHODS=[\"ccall\"]"
     )
 else()

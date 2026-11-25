@@ -41,11 +41,19 @@ class SdfScene {
 public:
     void clear();
     void addNode(const SdfNodeGpu& node);
+    void removeNode(int index);
     void buildPreset(int presetIndex, float time, float blendK = 0.45f, int opOverride = -1);
+    void recomputeBounds();
 
+    // CPU sphere-tracing against current nodes; returns node index or -1.
+    int pickNode(const float ro[3], const float rd[3]) const;
+
+    SdfNodeGpu* nodeAt(int index);
+    const SdfNodeGpu* nodeAt(int index) const;
     const SceneUniformData& gpuData() const { return data_; }
     int nodeCount() const { return static_cast<int>(data_.meta[0]); }
 
 private:
+    float evalNodeDist(const float p[3], const SdfNodeGpu& node) const;
     SceneUniformData data_{};
 };
