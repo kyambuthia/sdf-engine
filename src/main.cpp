@@ -273,6 +273,11 @@ static void mainLoop(void* userdata) {
     float pos[3], forward[3], right[3], up[3];
     app->camera.computeBasis(pos, forward, right, up);
 
+    app->scene.buildPreset(app->sceneIndex, static_cast<float>(app->simTime), app->blendK, app->opOverride);
+    glBindBuffer(GL_UNIFORM_BUFFER, app->sceneUbo);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SceneUniformData), &app->scene.gpuData());
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
     app->shader.use();
     glUniform2f(app->uResolution, static_cast<float>(renderW), static_cast<float>(renderH));
     glUniform1f(app->uTime, static_cast<float>(app->simTime));
