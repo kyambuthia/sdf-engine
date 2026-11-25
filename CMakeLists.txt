@@ -24,6 +24,7 @@ FetchContent_MakeAvailable(SDL3)
 add_executable(sdf_engine
     src/main.cpp
     src/shader.cpp
+    src/scene.cpp
 )
 
 target_include_directories(sdf_engine PRIVATE src)

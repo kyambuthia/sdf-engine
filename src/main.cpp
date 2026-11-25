@@ -1,4 +1,5 @@
 #include "camera.hpp"
+#include "scene.hpp"
 #include "shader.hpp"
 
 #include <SDL3/SDL.h>
@@ -17,6 +18,8 @@ struct AppState {
     SDL_GLContext glContext = nullptr;
     ShaderProgram shader;
     GLuint vao = 0;
+    GLuint sceneUbo = 0;
+    SdfScene scene;
 
     // Offscreen FBO for dynamic resolution scaling
     GLuint fbo = 0;
@@ -318,6 +321,16 @@ int main(int argc, char* argv[]) {
     }
 
     cacheUniforms(app);
+    GLuint blockIdx = glGetUniformBlockIndex(app.shader.id, "SceneBlock");
+    if (blockIdx != GL_INVALID_INDEX) {
+        glUniformBlockBinding(app.shader.id, blockIdx, 0);
+    }
+    glGenBuffers(1, &app.sceneUbo);
+    glBindBuffer(GL_UNIFORM_BUFFER, app.sceneUbo);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(SceneUniformData), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, app.sceneUbo);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
     glGenVertexArrays(1, &app.vao);
     app.lastTicks = SDL_GetTicks();
 
@@ -331,6 +344,7 @@ int main(int argc, char* argv[]) {
 
     if (app.fboTex != 0) glDeleteTextures(1, &app.fboTex);
     if (app.fbo != 0) glDeleteFramebuffers(1, &app.fbo);
+    if (app.sceneUbo != 0) glDeleteBuffers(1, &app.sceneUbo);
     glDeleteVertexArrays(1, &app.vao);
     app.shader.destroy();
     SDL_GL_DestroyContext(app.glContext);
